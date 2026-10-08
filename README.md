@@ -504,7 +504,6 @@ server or proxy that stops answering an error, never a hang:
   with exit code 255 and that error, kind `connection_lost`, reason `timeout`,
   in its `result`). A download to a path that fails leaves no partial file.
 - `nil` is no limit; zero, negative or non-numeric values are a `UsageError`.
-  0.1.0's `timeout:` still works and sets both.
 - A connection closed or reset before any answer is an `UnreachableError` (kind
   `network`) at once, retried only as above.
 

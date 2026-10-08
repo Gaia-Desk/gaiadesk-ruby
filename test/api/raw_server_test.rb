@@ -266,7 +266,7 @@ class RawServerTest < Minitest::Test
         end
       end
     end
-    assert_raises(GaiaDesk::UsageError) { GaiaDesk.new(api_key: "k", timeout: 5, idle_timeout: 10) }
+    assert_raises(GaiaDesk::UsageError) { GaiaDesk.new(api_key: "k", timeout: 5) }
 
     t = GaiaDesk.new(api_key: "k").transport
 
@@ -277,9 +277,6 @@ class RawServerTest < Minitest::Test
     t = GaiaDesk.new(api_key: "k", response_timeout: 0.5, idle_timeout: 2).transport
 
     assert_equal [0.5, 2], [t.response_timeout, t.idle_timeout]
-    t = GaiaDesk.new(api_key: "k", timeout: 7).transport
-
-    assert_equal [7, 7], [t.response_timeout, t.idle_timeout], "0.1.0's timeout sets both"
   end
 
   def test_net_http_never_resends_by_itself

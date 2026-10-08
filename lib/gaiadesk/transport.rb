@@ -223,18 +223,9 @@ module GaiaDesk
       @prefix = u.path.to_s.chomp("/")
     end
 
-    # +timeout+ (0.1.0's one per-read limit) still sets both timeouts.
-    def set_http_options(timeout: nil, response_timeout: DEFAULT_RESPONSE_TIMEOUT, idle_timeout: DEFAULT_IDLE_TIMEOUT,
+    def set_http_options(response_timeout: DEFAULT_RESPONSE_TIMEOUT, idle_timeout: DEFAULT_IDLE_TIMEOUT,
                          open_timeout: 30, retries: 2, retry_base: DEFAULT_RETRY_BASE, retry_max_delay: DEFAULT_RETRY_MAX_DELAY,
                          max_retry_wait: DEFAULT_MAX_RETRY_WAIT)
-      unless timeout.nil?
-        if response_timeout != DEFAULT_RESPONSE_TIMEOUT || idle_timeout != DEFAULT_IDLE_TIMEOUT
-          raise UsageError.new("timeout is the old name of response_timeout and idle_timeout together: give it or them, not both",
-                               kind: "usage")
-        end
-
-        response_timeout = idle_timeout = timeout
-      end
       @response_timeout = Transport.check_timeout(response_timeout, "response_timeout")
       @idle_timeout = Transport.check_timeout(idle_timeout, "idle_timeout")
       @open_timeout = Transport.check_timeout(open_timeout, "open_timeout")

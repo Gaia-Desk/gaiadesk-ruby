@@ -80,13 +80,20 @@ class RetryTest < Minitest::Test
     late&.close
   end
 
+  # One connect attempt, no backoff. (Not timed: Windows itself spends about 2 s on a
+  # refused connect to localhost, retrying the SYN.)
   def test_a_refused_connect_with_no_retries_fails_at_once
     port = TCPServer.new("127.0.0.1", 0).then { |s| s.addr[1].tap { s.close } }
-    t = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    e = bounded { assert_raises(GaiaDesk::UnreachableError) { gd(retries: 0, url: "http://127.0.0.1:#{port}/v1").exec(D, "x") } }
+    c = gd(retries: 0, base: 30, url: "http://127.0.0.1:#{port}/v1")
+    connects = 0
+    c.transport.define_singleton_method(:connection) do
+      connects += 1
+      super()
+    end
+    e = bounded { assert_raises(GaiaDesk::UnreachableError) { c.exec(D, "x") } }
 
     assert_equal "network", e.kind
-    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - t, :<, 1
+    assert_equal 1, connects
   end
 
   # ───────────────────────── lost after sending ─────────────────────────

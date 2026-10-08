@@ -51,9 +51,11 @@ Never hang on a dropped or stalled connection.
   - `retry_base:`, `retry_max_delay:` and `max_retry_wait:` are validated (a
     negative, NaN or infinite value is a `UsageError`).
 
-### Deprecated
+### Removed
 
-- `timeout:` (0.1.0's per-read limit) sets both `response_timeout:` and `idle_timeout:`.
+- The client's `timeout:` option (0.1.0's one per-read limit, no limit by
+  default): `response_timeout:` and `idle_timeout:` replace it. The per-call
+  `timeout:` of `exec`, `exec_stream` and `wait_job` is unchanged.
 
 ## [0.1.0] - 2026-10-08
 
