@@ -32,6 +32,7 @@ Never hang on a dropped or stalled connection.
   (`connection_lost`, `unreachable`, ...).
 - `download` to a path writes a temporary file beside it and renames it once
   whole: a failed download leaves no partial file.
+- `download_stream` no longer yields an empty first piece on Ruby 3.1.
 
 ### Deprecated
 

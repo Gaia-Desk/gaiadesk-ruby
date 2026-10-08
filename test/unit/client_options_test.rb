@@ -62,10 +62,13 @@ class ClientOptionsTest < Minitest::Test
 
   def test_local_and_lan_build
     Dir.mktmpdir do |dir|
-      gd = GaiaDesk.new(transport: :local, env: { "GAIADESK_API_DIR" => dir })
+      env = { "GAIADESK_API_DIR" => dir }
+      gd = GaiaDesk.new(transport: :local, env: env)
 
       assert_equal "local", gd.backend
-      assert_equal "unix:#{File.join(dir, 'api.sock')}", gd.transport.base_url
+      expected = GaiaDesk::Local.windows? ? "pipe:#{GaiaDesk::Local.pipe_name(env)}" : "unix:#{File.join(dir, 'api.sock')}"
+
+      assert_equal expected, gd.transport.base_url
     end
     lan = GaiaDesk.new(transport: :lan, base_url: "https://gaiadesk-123456789.local:7443/v1", fingerprint: "#{'AB:' * 31}AB",
                        desk_token: "gdagt_x")

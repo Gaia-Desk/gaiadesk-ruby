@@ -177,7 +177,7 @@ module GaiaDesk
         if seal
           E2E.read_sealed_file(res, seal, "GET files", &block)
         else
-          res.read_body { |b| yield b.b }
+          res.read_body { |b| yield b.b unless b.empty? } # Ruby 3.1's Net::HTTP yields an empty first piece
           nil
         end
       end
