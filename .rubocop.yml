@@ -1,0 +1,81 @@
+plugins:
+  - rubocop-minitest
+
+AllCops:
+  TargetRubyVersion: 3.1
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+    - "pkg/**/*"
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/Documentation:
+  Exclude:
+    - "test/**/*"
+
+Layout/LineLength:
+  Max: 140
+  Exclude:
+    - "test/**/*"
+
+# The SDK's methods mirror the API's options one keyword each.
+Metrics/ParameterLists:
+  Max: 8
+  CountKeywordArgs: false
+Metrics/MethodLength:
+  Max: 40
+  Exclude:
+    - "test/**/*"
+Metrics/AbcSize:
+  Max: 45
+  Exclude:
+    - "test/**/*"
+Metrics/CyclomaticComplexity:
+  Max: 16
+  Exclude:
+    - "test/**/*"
+Metrics/PerceivedComplexity:
+  Max: 16
+  Exclude:
+    - "test/**/*"
+Metrics/ClassLength:
+  Max: 400
+  Exclude:
+    - "test/**/*"
+Metrics/ModuleLength:
+  Max: 400
+Metrics/BlockLength:
+  Exclude:
+    - "test/**/*"
+    - "*.gemspec"
+
+# Errors carry their details as keywords; `raise Klass.new(...)` reads better than `raise Klass, ...` with them.
+Style/RaiseArgs:
+  Enabled: false
+Naming/MethodParameterName:
+  MinNameLength: 1
+# PipeIO mirrors IO's own method names (wait_readable, wait_writable).
+Naming/PredicateMethod:
+  Exclude:
+    - "lib/gaiadesk/http.rb"
+Naming/VariableNumber:
+  Exclude:
+    - "test/**/*"
+Lint/StructNewOverride:
+  Exclude:
+    - "test/**/*"
+Naming/AccessorMethodName:
+  Enabled: false
+Minitest/MultipleAssertions:
+  Enabled: false
+Minitest/AssertTruthy:
+  Enabled: false
+Minitest/RefuteFalse:
+  Enabled: false
+Style/ClassAndModuleChildren:
+  Enabled: false
+Style/FormatStringToken:
+  Enabled: false
