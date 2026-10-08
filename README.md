@@ -35,7 +35,6 @@ MIT-licensed. GaiaDesk itself is proprietary and not covered by this license.
 - [Desks](#desks)
 - [Commands](#commands)
 - [Streaming output](#streaming-output)
-- [Running as administrator](#running-as-administrator)
 - [Background jobs](#background-jobs)
 - [Files](#files)
 - [Agent tokens](#agent-tokens)
@@ -172,38 +171,9 @@ failure after the stream started (the desk lost) is its last event, `error`,
 never an exception from `each`. stdin is given up front (`stdin:`); a stream
 cannot be written to.
 
-## Running as administrator
-
-```ruby
-r = gd.exec("123456789", "launchctl list", admin: true, desk_token: ENV["GAIADESK_ADMIN_TOKEN"])
-```
-
-`admin: true` runs the command as root (macOS, Linux) or SYSTEM (Windows) in
-the desk's privileged GaiaDesk process. It needs an agent token whose scopes
-include `admin` (never implied) **and** the desk owner's Admin access switch,
-which is turned on only at the desk with the computer's administrator
-password; by default the person at the desk is asked each time. A refusal
-raises `GaiaDesk::RefusedError` (exit 254) whose `admin_refusal?` is true and
-whose `reason` is one of `GaiaDesk::ADMIN_REASONS`:
-
-| `reason` | meaning |
-|---|---|
-| `admin_scope_missing` | the token has no `admin` scope (or it is a person's call) |
-| `admin_not_enabled` | Admin access is off on the desk |
-| `admin_denied` | the person at the desk said no, nobody answered, or the desk's service does not know the token yet |
-| `admin_unavailable` | no privileged process (unattended access off), or a desk too old for the field |
-
-```ruby
-begin
-  gd.exec(desk, "whoami", admin: true)
-rescue GaiaDesk::RefusedError => e
-  raise unless e.admin_refusal?
-  warn "not as administrator: #{e.reason}"
-end
-```
-
-Windows Smart App Control / WDAC still refuse unsigned new programs for SYSTEM
-(`blocked_by_os_policy`). Background jobs never run as administrator.
+Administrator work (root / SYSTEM) is only available through
+`gaiadesk-cli exec --admin`, not the API: the API refuses it with
+`admin_not_via_api` (a `RefusedError`).
 
 ## Background jobs
 
@@ -262,8 +232,7 @@ owner.list_tokens("123456789")              # never their secrets
 owner.revoke_token("123456789", "ci")       # by id or name; its sessions and jobs end
 ```
 
-`scopes` default to `exec cp jobs`; `admin` is never implied and a confined
-token (`cwd`, `low_priv`) cannot carry it. Minting on several desks is one
+`scopes` default to `exec cp jobs` (any of `GaiaDesk::Args::TOKEN_SCOPES`). Minting on several desks is one
 request per desk; if a later desk fails, the error's `json["tokens"]` holds the
 tokens already minted.
 
@@ -435,7 +404,7 @@ Every failure of the API is one envelope, `{"error": {"kind", "message",
 | Class | `kind` | HTTP | Means |
 |---|---|---|---|
 | `GaiaDesk::UsageError` | `usage` | 400 | fix the request (also the SDK's own argument checks) |
-| `GaiaDesk::RefusedError` | `refused` | 401, 403, 429 | `unauthenticated`, `missing_scope`, `agent_cannot_admin`, `desk_opted_out`, `rate_limited`, `desk_busy`, the admin reasons, ... |
+| `GaiaDesk::RefusedError` | `refused` | 401, 403, 429 | `unauthenticated`, `missing_scope`, `agent_cannot_admin`, `desk_opted_out`, `rate_limited`, `desk_busy`, `admin_not_via_api`, ... |
 | `GaiaDesk::UnreachableError` | `unreachable` | 404, 409, 503, 504 | `unknown_desk`, offline (`silent`, `closed`, ...), `no_wake_path`; `network` when nothing answered |
 | `GaiaDesk::ConnectionLostError` | `connection_lost` | 502 | the desk went away mid-operation |
 | `GaiaDesk::OperationFailedError` | `failed` | 422, 500 | it ran and did not succeed (no such job, a file not copied) |
@@ -449,14 +418,13 @@ All inherit `GaiaDesk::Error < StandardError`, with:
 ```ruby
 rescue GaiaDesk::Error => e
   e.kind          # the envelope's kind, or the finer reason when it is a well-known one (offline, network, timeout, ...)
-  e.reason        # the finer cause: "missing_scope", "desk_busy", "admin_denied", ...
+  e.reason        # the finer cause: "missing_scope", "desk_busy", "admin_not_via_api", ...
   e.desk          # the desk it concerned
   e.status        # the HTTP status
   e.request_id    # req_…: quote it to support
   e.retry_after   # seconds, from a 429's Retry-After
   e.exit_code     # what gaiadesk-cli would have exited with (254 refused, 1 failed, 255 its own error)
   e.json          # the parsed envelope (or result)
-  e.admin_refusal?
 end
 ```
 

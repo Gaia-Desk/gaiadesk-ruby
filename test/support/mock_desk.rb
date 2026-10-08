@@ -19,7 +19,6 @@ class MockDesk
   Held = Struct.new(:delay, :outcome)
 
   attr_reader :id, :jobs, :files, :tokens
-  attr_accessor :admin_enabled, :admin_mode
 
   def initialize(id)
     @id = id
@@ -27,8 +26,6 @@ class MockDesk
     @files = { "/tmp/hello.txt" => "hello from the desk\n".b }
     @folders = ["/tmp"]
     @tokens = [{ "id" => "tok_existing", "name" => "ci", "scopes" => %w[exec cp jobs], "expires_at" => 1_900_000_000 }]
-    @admin_enabled = false
-    @admin_mode = :allow
     @seq = 0
   end
 
@@ -50,19 +47,12 @@ class MockDesk
     base_result(254, "", "", error: { "kind" => "refused", "message" => message, "reason" => reason, "desk" => @id }, remote_code: nil)
   end
 
-  def admin_refusal(spec, scopes)
-    return nil unless spec["admin"]
-    return refusal("admin_scope_missing", "this token has no admin scope") unless scopes.include?("admin")
-    return refusal("admin_not_enabled", "Admin access is off on this desk") unless @admin_enabled
-    return refusal("admin_denied", "the person at the desk said no") if @admin_mode == :deny
-
-    nil
-  end
-
-  # The command's events and its result.
-  def run(spec, scopes)
-    refused = admin_refusal(spec, scopes)
-    return [[], refused] if refused
+  # The command's events and its result. Administrator work is refused, as the API does;
+  # "adminwork" stands in for a request that asked for it.
+  def run(spec, _scopes)
+    if spec["admin"] || spec["command"] == "adminwork"
+      return [[], refusal("admin_not_via_api", "administrator work is not available through the API")]
+    end
 
     line = spec["command"] || Array(spec["argv"]).join(" ")
     word, rest = line.split(" ", 2)
@@ -74,7 +64,7 @@ class MockDesk
     when "cat" then ok_out(spec["stdin"].to_s)
     when "printenv" then ok_out("#{env[rest]}\n")
     when "pwd" then ok_out("#{spec['cwd'] || '/home/user'}\n")
-    when "whoami" then ok_out(spec["admin"] ? "root\n" : "user\n")
+    when "whoami" then ok_out("user\n")
     when "shell" then ok_out("#{spec['shell'] || 'default'}\n")
     when "spec" then ok_out(JSON.generate(spec))
     when "utf8" then utf8
@@ -213,6 +203,10 @@ class MockDesk
   # ───────────────────────────── tokens ─────────────────────────────
 
   def token_mint(spec)
+    if Array(spec["scopes"]).include?("admin")
+      return fail("refused", "the admin scope cannot be minted through the API", "admin_not_via_api")
+    end
+
     @seq += 1
     t = { "desk" => @id, "id" => "tok_#{@seq}", "name" => spec["name"], "scopes" => spec["scopes"],
           "expires_at" => 1_791_000_000 + spec["expires_secs"].to_i, "cwd" => spec["cwd"], "low_priv" => spec["low_priv"] || false }

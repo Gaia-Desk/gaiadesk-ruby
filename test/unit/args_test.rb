@@ -39,13 +39,14 @@ class ArgsTest < Minitest::Test
   def test_exec_spec
     assert_equal({ "command" => "uname -a" }, A.exec_spec("uname -a"))
     assert_equal({ "argv" => %w[make test], "shell" => "pwsh", "env" => { "CI" => "1" }, "cwd" => "src", "timeout_secs" => 600,
-                   "stdin" => "data", "admin" => true },
-                 A.exec_spec(%w[make test], shell: :powershell, env: { "CI" => "1" }, cwd: "src", timeout: "10m", stdin: "data", admin: true))
+                   "stdin" => "data" },
+                 A.exec_spec(%w[make test], shell: :powershell, env: { "CI" => "1" }, cwd: "src", timeout: "10m", stdin: "data"))
     assert_equal "from io", A.exec_spec("cat", stdin: StringIO.new("from io"))["stdin"]
     assert_raises(GaiaDesk::UsageError) { A.exec_spec("") }
     assert_raises(GaiaDesk::UsageError) { A.exec_spec([]) }
     assert_raises(GaiaDesk::UsageError) { A.exec_spec("x", shell: "fish") }
-    refute A.exec_spec("x").key?("admin")
+    assert_raises(ArgumentError) { A.exec_spec("x", admin: true) }
+    refute_includes A::TOKEN_SCOPES, "admin"
   end
 
   def test_job_spec
@@ -62,14 +63,12 @@ class ArgsTest < Minitest::Test
 
   def test_mint_spec
     assert_equal({ "name" => "ci", "expires_secs" => 604_800, "scopes" => %w[exec cp jobs] }, A.mint_spec(name: "ci"))
-    s = A.mint_spec(name: "ops", expires: "1d", scopes: %w[exec admin])
+    s = A.mint_spec(name: "ops", expires: "1d", scopes: %w[exec shell])
 
-    assert_equal %w[exec admin], s["scopes"]
+    assert_equal %w[exec shell], s["scopes"]
     assert_equal 86_400, s["expires_secs"]
     assert_equal({ "name" => "c", "expires_secs" => 60, "scopes" => ["cp"], "cwd" => "/srv", "low_priv" => true },
                  A.mint_spec(name: "c", expires: 60, scopes: ["cp"], cwd: "/srv", low_priv: true))
     assert_raises(GaiaDesk::UsageError) { A.mint_spec(name: "") }
-    assert_raises(GaiaDesk::UsageError) { A.mint_spec(name: "x", scopes: ["admin"], cwd: "/srv") }
-    assert_raises(GaiaDesk::UsageError) { A.mint_spec(name: "x", scopes: ["admin"], low_priv: true) }
   end
 end

@@ -82,16 +82,19 @@ class ErrorsTest < Minitest::Test
     assert_raises(GaiaDesk::OperationFailedError) { Errs.exec_outcome(r, false, "op") }
   end
 
-  def test_exec_outcome_refused_admin
-    GaiaDesk::ADMIN_REASONS.each do |reason|
-      r = result(254, remote_code: nil, error: { "kind" => "refused", "message" => "no", "reason" => reason })
-      e = assert_raises(GaiaDesk::RefusedError) { Errs.exec_outcome(r, false, "op") }
-      assert_predicate e, :admin_refusal?
-      assert_equal reason, e.reason
-      assert_equal 254, e.exit_code
-      assert_equal "123456789", e.desk
-    end
-    refute_predicate Errs.for_kind("refused", "x", "missing_scope"), :admin_refusal?
+  def test_admin_not_via_api_is_a_refusal
+    r = result(254, remote_code: nil, error: { "kind" => "refused", "message" => "no", "reason" => "admin_not_via_api" })
+    e = assert_raises(GaiaDesk::RefusedError) { Errs.exec_outcome(r, false, "op") }
+
+    assert_equal "refused", e.kind
+    assert_equal GaiaDesk::ADMIN_NOT_VIA_API, e.reason
+    assert_equal 254, e.exit_code
+    assert_equal "123456789", e.desk
+    e = Errs.for_kind("refused", "no", "admin_not_via_api", status: 403)
+
+    assert_instance_of GaiaDesk::RefusedError, e
+    assert_equal "refused", e.kind
+    refute GaiaDesk.const_defined?(:ADMIN_REASONS)
   end
 
   def test_blocked_by_os_policy_is_a_failed_result

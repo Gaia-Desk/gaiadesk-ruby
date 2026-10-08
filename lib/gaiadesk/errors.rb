@@ -16,7 +16,7 @@ module GaiaDesk
   class Error < StandardError
     # @return [String] the kind (see the class description)
     attr_reader :kind
-    # @return [String, nil] the finer cause the API gave (+missing_scope+, +desk_busy+, +admin_denied+, ...)
+    # @return [String, nil] the finer cause the API gave (+missing_scope+, +desk_busy+, +admin_not_via_api+, ...)
     attr_reader :reason
     # @return [String, nil] the desk the failure concerned, when the API said
     attr_reader :desk
@@ -46,11 +46,6 @@ module GaiaDesk
       @argv = Array(argv)
       @json = json
     end
-
-    # Whether this is one of the refusals of an administrator command (<tt>exec(admin: true)</tt>).
-    def admin_refusal?
-      ADMIN_REASONS.include?(reason)
-    end
   end
 
   # Bad arguments (kind +usage+), caught by the SDK or by the API (HTTP 400).
@@ -58,7 +53,7 @@ module GaiaDesk
 
   # The credential or the desk said no (kind +refused+; HTTP 401, 403, 429; exit 254):
   # a missing scope, an expired or revoked token, the desk's opt-out, a rate limit,
-  # an administrator command the desk refused ({Error#admin_refusal?}).
+  # administrator work asked of the API ({ADMIN_NOT_VIA_API}).
   class RefusedError < Error; end
 
   # The desk could not be reached (kind +unreachable+; HTTP 404, 409, 503, 504):
@@ -102,12 +97,10 @@ module GaiaDesk
   # The six kinds of the error envelope.
   KINDS = %w[usage refused unreachable connection_lost failed protocol].freeze
 
-  # The +reason+s of a refused administrator command (<tt>exec(admin: true)</tt>):
-  # +admin_scope_missing+ (the token has no +admin+ scope), +admin_not_enabled+
-  # (Admin access is off on the desk), +admin_denied+ (the person at the desk said
-  # no, or nobody answered), +admin_unavailable+ (no privileged process, or a desk
-  # too old for the field).
-  ADMIN_REASONS = %w[admin_scope_missing admin_not_enabled admin_denied admin_unavailable].freeze
+  # The +reason+ of a RefusedError for administrator work (root / SYSTEM) asked of the API:
+  # an +"admin": true+ exec or a token with the +admin+ scope. Administrator work runs only
+  # through <tt>gaiadesk-cli exec --admin</tt>.
+  ADMIN_NOT_VIA_API = "admin_not_via_api"
 
   # Helpers that map the API's error envelope onto the classes above.
   module Errors

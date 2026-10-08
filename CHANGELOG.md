@@ -4,6 +4,27 @@ All notable changes to the `gaiadesk` gem. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-10-08
+
+Administrator work is not available through any API.
+
+### Removed (breaking)
+
+- `exec(admin: true)` / `exec_stream(admin: true)`: the `admin:` keyword is gone
+  (passing it is an `ArgumentError`) on every transport (`:api`, `:local`,
+  `:lan`), and so is the `admin` token scope (`Args::TOKEN_SCOPES`). The API
+  refuses administrator work before anything runs: an `"admin": true` exec answers
+  exit 254, and minting the `admin` scope answers 403. Run it with
+  `gaiadesk-cli exec --admin`.
+- `GaiaDesk::ADMIN_REASONS` and `Error#admin_refusal?` (`admin_scope_missing`,
+  `admin_not_enabled`, `admin_denied`, `admin_unavailable` no longer come back
+  from the API).
+
+### Added
+
+- `GaiaDesk::ADMIN_NOT_VIA_API` (`"admin_not_via_api"`): the reason of the
+  `RefusedError` (kind `refused`) for both refusals.
+
 ## [0.1.1] - 2026-10-08
 
 Never hang on a dropped or stalled connection.

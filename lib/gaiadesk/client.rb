@@ -133,14 +133,11 @@ module GaiaDesk
     # @param timeout [Integer, String, nil] stop it after this long (+"10m"+); at most 15 minutes
     # @param cwd [String, nil] the directory it starts in on the desk
     # @param env [Hash{String => String}, nil] environment variables (never logged)
-    # @param admin [Boolean] run it as administrator (root / SYSTEM): needs a token with the
-    #   +admin+ scope and the desk owner's Admin access; a refusal is a {RefusedError}
-    #   whose {Error#admin_refusal?} is true
     # @return [Hash] the ExecResult: +exit+, +stdout+, +stderr+, +remote_code+, +timed_out+, +error+, ...
     # @raise [RefusedError, UnreachableError, ...] when the command never ran
-    def exec(desk_id, command, stdin: nil, check: false, shell: nil, timeout: nil, cwd: nil, env: nil, admin: false,
+    def exec(desk_id, command, stdin: nil, check: false, shell: nil, timeout: nil, cwd: nil, env: nil,
              desk_token: nil, wake: nil, idempotency_key: nil)
-      @transport.exec(desk_id, command, check: check, stdin: stdin, shell: shell, timeout: timeout, cwd: cwd, env: env, admin: admin,
+      @transport.exec(desk_id, command, check: check, stdin: stdin, shell: shell, timeout: timeout, cwd: cwd, env: env,
                                         call: call_opts(desk_token, wake, idempotency_key))
     end
 
@@ -154,9 +151,9 @@ module GaiaDesk
     #   s = gd.exec_stream(desk, ["make", "test"]) { |c| print c.text }
     #   s.result["exit"]
     # @return [Stream]
-    def exec_stream(desk_id, command, stdin: nil, shell: nil, timeout: nil, cwd: nil, env: nil, admin: false,
+    def exec_stream(desk_id, command, stdin: nil, shell: nil, timeout: nil, cwd: nil, env: nil,
                     desk_token: nil, wake: nil, &block)
-      s = @transport.exec_stream(desk_id, command, stdin: stdin, shell: shell, timeout: timeout, cwd: cwd, env: env, admin: admin,
+      s = @transport.exec_stream(desk_id, command, stdin: stdin, shell: shell, timeout: timeout, cwd: cwd, env: env,
                                                    call: call_opts(desk_token, wake))
       drain(s, &block)
     end
@@ -274,7 +271,8 @@ module GaiaDesk
     # @param desks [String, Array<String>]
     # @param name [String]
     # @param expires [Integer, String] default +"7d"+
-    # @param scopes [Array<String>] default <tt>exec cp jobs</tt>; +admin+ is never implied
+    # @param scopes [Array<String>] default <tt>exec cp jobs</tt> (any of {Args::TOKEN_SCOPES}; the API refuses
+    #   +admin+ with {ADMIN_NOT_VIA_API})
     # @param cwd [String, nil] confine its work to this folder
     # @param low_priv [Boolean] run its work as the desk's low-privilege agent user
     # @return [Hash] <tt>{"tokens" => [...]}</tt>, each with its +secret+ (shown once)

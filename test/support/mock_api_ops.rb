@@ -20,8 +20,8 @@ class MockApi
     end
   end
 
-  def scopes_of(token)
-    token == "gdagt_admin" ? %w[exec jobs cp admin] : %w[exec jobs cp]
+  def scopes_of(_token)
+    %w[exec jobs cp]
   end
 
   def desk_op(req, res, desk, rest)

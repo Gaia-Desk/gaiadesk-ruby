@@ -33,7 +33,7 @@ class DeskOpsTest < Minitest::Test
 
     assert_equal "Bearer sess_person", req.header("authorization")
     assert_equal "gdagt_basic", req.header("x-gaiadesk-desk-token")
-    assert_equal "gaiadesk-ruby/0.1.1", req.header("user-agent")
+    assert_equal "gaiadesk-ruby/0.1.2", req.header("user-agent")
   end
 
   # ───────────────────────────── exec ─────────────────────────────
@@ -83,23 +83,23 @@ class DeskOpsTest < Minitest::Test
     assert_equal 254, e.exit_code
   end
 
-  def test_admin
-    e = assert_raises(GaiaDesk::RefusedError) { @gd.exec(D, "whoami", admin: true) }
-    assert_equal "admin_scope_missing", e.reason
-    assert_predicate e, :admin_refusal?
-    assert_equal true, JSON.parse(last("POST").body)["admin"]
+  def test_administrator_work_is_not_available_through_the_api
+    assert_raises(ArgumentError) { @gd.exec(D, "whoami", admin: true) }
+    assert_raises(ArgumentError) { @gd.exec_stream(D, "whoami", admin: true) }
+    e = assert_raises(GaiaDesk::RefusedError) { @gd.exec(D, "adminwork") }
+    assert_equal "refused", e.kind
+    assert_equal GaiaDesk::ADMIN_NOT_VIA_API, e.reason
+    assert_equal 254, e.exit_code
+    assert_equal D, e.desk
+    s = @gd.exec_stream(D, "adminwork")
 
-    e = assert_raises(GaiaDesk::RefusedError) { @gd.exec(D, "whoami", admin: true, desk_token: "gdagt_admin") }
-    assert_equal "admin_not_enabled", e.reason
-    @api.desks[D].admin_enabled = true
-    @api.desks[D].admin_mode = :deny
-    e = assert_raises(GaiaDesk::RefusedError) { @gd.exec(D, "whoami", admin: true, desk_token: "gdagt_admin") }
-    assert_equal "admin_denied", e.reason
-    @api.desks[D].admin_mode = :allow
+    assert_equal 254, s.wait.exit_code
+    assert_equal "admin_not_via_api", s.result["error"]["reason"]
 
-    assert_equal "root\n", @gd.exec(D, "whoami", admin: true, desk_token: "gdagt_admin")["stdout"]
-    assert_equal "gdagt_admin", last("POST").header("x-gaiadesk-desk-token")
-    assert_equal "user\n", @gd.exec(D, "whoami")["stdout"]
+    e = assert_raises(GaiaDesk::RefusedError) { client(@api).create_token(D, name: "root", scopes: %w[exec admin]) }
+    assert_equal "refused", e.kind
+    assert_equal "admin_not_via_api", e.reason
+    assert_equal 403, e.status
   end
 
   def test_per_call_wake_and_client_wake
@@ -387,11 +387,11 @@ class DeskOpsTest < Minitest::Test
 
   def test_tokens
     gd = client(@api) # a person's session, no desk token
-    r = gd.create_token(D, name: "ci", scopes: %w[exec admin], expires: "1d")
+    r = gd.create_token(D, name: "ci", scopes: %w[exec jobs], expires: "1d")
     t = r["tokens"].first
 
     assert_match(/\Agdagt_/, t["secret"])
-    assert_equal({ "name" => "ci", "expires_secs" => 86_400, "scopes" => %w[exec admin] }, JSON.parse(last("POST").body))
+    assert_equal({ "name" => "ci", "expires_secs" => 86_400, "scopes" => %w[exec jobs] }, JSON.parse(last("POST").body))
     assert_includes gd.list_tokens(D).map { |x| x["id"] }, t["id"]
     assert_equal({ "revoked" => t["id"], "stopped_sessions" => 1 }, gd.revoke_token(D, t["id"]))
     assert_raises(GaiaDesk::OperationFailedError) { gd.revoke_token(D, "tok_gone") }

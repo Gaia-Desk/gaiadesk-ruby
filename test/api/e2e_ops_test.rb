@@ -46,12 +46,12 @@ class E2eOpsTest < Minitest::Test
     assert_nothing_in_the_clear("top-secret-output", "env-secret", "TOKEN")
   end
 
-  def test_admin_refusal_comes_back_sealed
-    e = assert_raises(GaiaDesk::RefusedError) { @gd.exec(D, "whoami", admin: true) }
-    assert_equal "admin_scope_missing", e.reason
-    @api.desks[D].admin_enabled = true
-
-    assert_equal "root\n", @gd.exec(D, "whoami", admin: true, desk_token: "gdagt_admin")["stdout"]
+  def test_admin_not_via_api_comes_back_sealed
+    e = assert_raises(GaiaDesk::RefusedError) { @gd.exec(D, "adminwork") }
+    assert_equal "admin_not_via_api", e.reason
+    e = assert_raises(GaiaDesk::RefusedError) { client(@api).create_token(D, name: "root", scopes: %w[admin]) }
+    assert_equal "admin_not_via_api", e.reason
+    assert_equal 403, e.status
   end
 
   def test_exec_stream_sealed

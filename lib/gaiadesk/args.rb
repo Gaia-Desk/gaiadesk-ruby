@@ -8,8 +8,8 @@ module GaiaDesk
     SHELLS = %w[default none sh bash zsh cmd pwsh powershell].freeze
     # A job's shells (never +none+ or +default+: a job is a command line).
     JOB_SHELLS = %w[sh bash zsh cmd pwsh powershell].freeze
-    # The scopes an agent token can carry (+admin+ is never implied).
-    TOKEN_SCOPES = %w[exec shell cp forward jobs screen admin].freeze
+    # The scopes an agent token can carry through the API.
+    TOKEN_SCOPES = %w[exec shell cp forward jobs screen].freeze
     # A minted token's scopes when none are given.
     DEFAULT_SCOPES = %w[exec cp jobs].freeze
     UNITS = { "s" => 1, "sec" => 1, "secs" => 1, "m" => 60, "min" => 60, "mins" => 60, "h" => 3600, "d" => 86_400,
@@ -108,8 +108,8 @@ module GaiaDesk
 
     # An +ExecSpec+: +command+ (a String, one line for the desk's shell) or +argv+
     # (an Array, separate arguments), and +shell+, +env+, +cwd+, +timeout_secs+,
-    # +stdin+, +admin+.
-    def exec_spec(command, stdin: nil, shell: nil, env: nil, cwd: nil, timeout: nil, admin: false)
+    # +stdin+.
+    def exec_spec(command, stdin: nil, shell: nil, env: nil, cwd: nil, timeout: nil)
       argv = command_list(command, "exec")
       spec = command.is_a?(String) ? { "command" => command } : { "argv" => argv }
       spec["shell"] = wire_shell(shell) unless shell.nil?
@@ -117,7 +117,6 @@ module GaiaDesk
       spec["cwd"] = cwd.to_s unless cwd.nil?
       spec["timeout_secs"] = seconds(timeout, "timeout") unless timeout.nil?
       spec["stdin"] = stdin_text(stdin) unless stdin.nil?
-      spec["admin"] = true if admin
       spec
     end
 
@@ -144,13 +143,11 @@ module GaiaDesk
       spec
     end
 
-    # A +MintSpec+. +admin+ is never implied: name it in +scopes+. A confined token
-    # (+cwd+, +low_priv+) can never carry it.
+    # A +MintSpec+.
     def mint_spec(name:, expires: nil, scopes: nil, cwd: nil, low_priv: false)
       raise usage("create_token needs a name") if name.nil? || name.to_s.strip.empty?
 
       list = scopes.nil? || Array(scopes).empty? ? DEFAULT_SCOPES.dup : Array(scopes).map(&:to_s)
-      raise usage("a confined token (cwd or low_priv) cannot carry the admin scope") if list.include?("admin") && (cwd || low_priv)
 
       spec = { "name" => name.to_s, "expires_secs" => seconds(expires || "7d", "expires"), "scopes" => list }
       spec["cwd"] = cwd.to_s unless cwd.nil?
