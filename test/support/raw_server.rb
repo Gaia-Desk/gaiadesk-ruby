@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "socket"
 
 # A TCP server with no HTTP framework, for the failures a real one never produces on
@@ -10,9 +11,13 @@ require "socket"
 # #close.
 class RawServer
   MODES = %i[close_before_response reset_before_response close_after_body stall_mid_body stall_mid_json
-             stall_mid_events silent trickle_head].freeze
+             stall_mid_events silent trickle_head status ok keep_alive_then_close].freeze
+  # What +ok+ and +keep_alive_then_close+ answer: JSON every operation reads as a result.
+  OK_BODY = '{"exit":0,"stdout":"","stderr":"","failed":[]}'
 
   attr_accessor :mode
+  # +status+ mode's answer: <tt>[code, retry_after or nil, reason or nil]</tt>.
+  attr_accessor :status
 
   # +server+: another listening socket (a UNIXServer) instead of TCP on 127.0.0.1.
   def initialize(mode, server: nil)
@@ -76,6 +81,24 @@ class RawServer
     method = head[/\A\S+/]
     @lock.synchronize { @counts[method] += 1 }
     case @mode
+    when :status
+      read_body(sock, head)
+      answer_status(sock)
+    when :ok
+      read_body(sock, head)
+      sock.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{OK_BODY.bytesize}\r\n" \
+                 "Connection: close\r\n\r\n#{OK_BODY}")
+      sock.close
+    when :keep_alive_then_close # the first request answered with keep-alive; the next one on it dropped
+      read_body(sock, head)
+      sock.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{OK_BODY.bytesize}\r\n" \
+                 "Connection: keep-alive\r\n\r\n#{OK_BODY}")
+      head = read_head(sock)
+      if head
+        method = head[/\A\S+/]
+        @lock.synchronize { @counts[method] += 1 }
+      end
+      sock.close
     when :close_before_response then sock.close
     when :reset_before_response then reset(sock)
     when :close_after_body
@@ -103,6 +126,18 @@ class RawServer
     end
   rescue IOError, SystemCallError
     sock.close unless sock.closed?
+  end
+
+  def answer_status(sock)
+    code, retry_after, reason = @status
+    kind = { 429 => "refused", 409 => "unreachable", 502 => "connection_lost" }.fetch(code, "unreachable")
+    err = { "kind" => kind, "message" => "status #{code}" }
+    err["reason"] = reason if reason
+    body = JSON.generate({ "error" => err })
+    head = "HTTP/1.1 #{code} Status\r\nContent-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n"
+    head << "Retry-After: #{retry_after}\r\n" if retry_after
+    sock.write("#{head}\r\n#{body}")
+    sock.close
   end
 
   def hold(sock)

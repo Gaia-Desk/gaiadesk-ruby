@@ -63,11 +63,16 @@ module GaiaDesk
     #   {ConnectionLostError}, kind +timeout+
     # @param timeout [Numeric, nil] deprecated (0.1.0): sets +response_timeout+ and +idle_timeout+ both
     # @param open_timeout [Numeric, nil] seconds to connect
-    # @param retries [Integer] how many times a request is sent again when that is safe (see the README)
-    # @param max_retry_wait [Numeric] the longest +Retry-After+ honoured, in seconds
+    # @param retries [Integer] how many times a request is sent again when that is safe (default 2, so 3
+    #   attempts; 0: never; see the README)
+    # @param retry_base [Numeric] seconds the backoff starts at (default 0.25), doubling per retry
+    # @param retry_max_delay [Numeric] the longest backoff wait, in seconds (default 8)
+    # @param max_retry_wait [Numeric] the longest +Retry-After+ (429, 503) waited for, in seconds (default 60);
+    #   a longer one is raised at once
     # @raise [UsageError] for a missing or misplaced option
     def initialize(transport: :api, response_timeout: Transport::DEFAULT_RESPONSE_TIMEOUT, idle_timeout: Transport::DEFAULT_IDLE_TIMEOUT,
-                   timeout: nil, open_timeout: 30, retries: 2, retry_base: 0.5, max_retry_wait: 60, **options)
+                   timeout: nil, open_timeout: 30, retries: 2, retry_base: Transport::DEFAULT_RETRY_BASE,
+                   retry_max_delay: Transport::DEFAULT_RETRY_MAX_DELAY, max_retry_wait: Transport::DEFAULT_MAX_RETRY_WAIT, **options)
       name = transport.to_s
       raise UsageError.new("transport is :api, :local or :lan (not #{transport.inspect})", kind: "usage") unless OPTIONS.key?(name)
 
@@ -75,7 +80,7 @@ module GaiaDesk
       raise UsageError.new("#{misplaced.join(', ')}: not an option of the #{name} transport", kind: "usage") unless misplaced.empty?
 
       http = { response_timeout: response_timeout, idle_timeout: idle_timeout, timeout: timeout, open_timeout: open_timeout,
-               retries: retries, retry_base: retry_base, max_retry_wait: max_retry_wait }
+               retries: retries, retry_base: retry_base, retry_max_delay: retry_max_delay, max_retry_wait: max_retry_wait }
       @transport = build(name, options, http)
     end
 

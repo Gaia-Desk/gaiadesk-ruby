@@ -34,6 +34,23 @@ Never hang on a dropped or stalled connection.
   whole: a failed download leaves no partial file.
 - `download_stream` no longer yields an empty first piece on Ruby 3.1.
 
+### Changed
+
+- One retry policy, the same in every GaiaDesk SDK (the README's "Retries"):
+  - A 503 to a GET is now retried without needing `Retry-After`, unless its
+    reason is permanent (`api_disabled`, `desk_ops_disabled`, `local_api_off`).
+  - Every 429 is now retried for any method (before: only with `Retry-After` or
+    a `rate_limited` / `desk_busy` reason). Only 429 and 503 wait for
+    `Retry-After`; a 502 or 504 now backs off whatever it says.
+  - A connect that times out (`open_timeout`) is now an `UnreachableError`, kind
+    `timeout`, and no longer retried (before: kind `network`, retried); a TLS
+    certificate that fails verification is not retried either.
+  - Backoff: `retry_base:` now defaults to 0.25 s (was 0.5 s), doubling up to the
+    new `retry_max_delay:` (8 s, was fixed), times a random 0.5–1.0.
+    `max_retry_wait:` stays 60 s, `retries:` 2 (3 attempts).
+  - `retry_base:`, `retry_max_delay:` and `max_retry_wait:` are validated (a
+    negative, NaN or infinite value is a `UsageError`).
+
 ### Deprecated
 
 - `timeout:` (0.1.0's per-read limit) sets both `response_timeout:` and `idle_timeout:`.

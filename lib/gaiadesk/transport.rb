@@ -33,8 +33,14 @@ module GaiaDesk
     # The longest silence while reading an answer's body, in seconds: the API's streams
     # and held waits send a keep-alive every 15 s.
     DEFAULT_IDLE_TIMEOUT = 90
-    # Reasons of a 4xx answer that asks to try again shortly.
-    TRY_AGAIN = %w[rate_limited desk_busy idempotency_key_in_flight].freeze
+    # The default base of the retry backoff, in seconds (doubling per retry).
+    DEFAULT_RETRY_BASE = 0.25
+    # The default cap of one backoff wait, in seconds.
+    DEFAULT_RETRY_MAX_DELAY = 8
+    # The default longest +Retry-After+ waited for, in seconds; a longer one is raised at once.
+    DEFAULT_MAX_RETRY_WAIT = 60
+    # Reasons of a 503 that will not change by asking again.
+    PERMANENT_503 = %w[api_disabled desk_ops_disabled local_api_off].freeze
 
     # @return [String] +api+, +local+ or +lan+
     attr_reader :name
@@ -74,6 +80,19 @@ module GaiaDesk
       return value if value.is_a?(Numeric) && value.positive? && value.finite?
 
       raise UsageError.new("#{name} is seconds (a positive Numeric), or nil for no limit: #{value.inspect}", kind: "usage")
+    end
+
+    # A delay option checked: seconds, a finite Numeric >= 0.
+    def self.check_seconds(value, name)
+      return value.to_f if value.is_a?(Numeric) && value.finite? && value >= 0
+
+      raise UsageError.new("#{name} is seconds (a Numeric >= 0): #{value.inspect}", kind: "usage")
+    end
+
+    # The backoff before retry +attempt+ (0 for the first): <tt>min(cap, base * 2^attempt)</tt>
+    # times a random 0.5-1.0 (+random+ in 0...1).
+    def self.backoff(attempt, base: DEFAULT_RETRY_BASE, cap: DEFAULT_RETRY_MAX_DELAY, random: rand)
+      [base * (2**attempt), cap].min * (0.5 + (random * 0.5))
     end
 
     # Seconds as a message says them: +1+, +0.5+.
@@ -118,6 +137,11 @@ module GaiaDesk
     def where
       "the GaiaDesk API (#{@base_url})"
     end
+
+    # @return [Integer] how many times a request may be sent again
+    attr_reader :retries
+    # @return [Float] the backoff's base, its cap, and the longest Retry-After waited for (seconds)
+    attr_reader :retry_base, :retry_max_delay, :max_retry_wait
 
     # @return [Numeric, nil] seconds the answer has to begin (+nil+: no limit)
     attr_reader :response_timeout
@@ -201,7 +225,8 @@ module GaiaDesk
 
     # +timeout+ (0.1.0's one per-read limit) still sets both timeouts.
     def set_http_options(timeout: nil, response_timeout: DEFAULT_RESPONSE_TIMEOUT, idle_timeout: DEFAULT_IDLE_TIMEOUT,
-                         open_timeout: 30, retries: 2, retry_base: 0.5, max_retry_wait: 60)
+                         open_timeout: 30, retries: 2, retry_base: DEFAULT_RETRY_BASE, retry_max_delay: DEFAULT_RETRY_MAX_DELAY,
+                         max_retry_wait: DEFAULT_MAX_RETRY_WAIT)
       unless timeout.nil?
         if response_timeout != DEFAULT_RESPONSE_TIMEOUT || idle_timeout != DEFAULT_IDLE_TIMEOUT
           raise UsageError.new("timeout is the old name of response_timeout and idle_timeout together: give it or them, not both",
@@ -216,8 +241,9 @@ module GaiaDesk
       raise UsageError.new("retries is an Integer >= 0", kind: "usage") unless retries.is_a?(Integer) && retries >= 0
 
       @retries = retries
-      @retry_base = retry_base.to_f
-      @max_retry_wait = max_retry_wait.to_f
+      @retry_base = Transport.check_seconds(retry_base, "retry_base")
+      @retry_max_delay = Transport.check_seconds(retry_max_delay, "retry_max_delay")
+      @max_retry_wait = Transport.check_seconds(max_retry_wait, "max_retry_wait")
     end
 
     def apply_timeouts(http)
@@ -255,8 +281,14 @@ module GaiaDesk
       begin
         begin
           http.start
+        rescue Net::OpenTimeout
+          raise UnreachableError.new("#{where} could not be connected to for #{op} within #{Transport.secs(@open_timeout)} s " \
+                                     "(open_timeout)", kind: "timeout", reason: "timeout", exit_code: 255, argv: [op])
         rescue *HTTP::NETWORK_ERRORS => e
-          raise staged(network_error(e, op), :connect)
+          err = network_error(e, op)
+          # Nothing was sent: any method may try again, unless the certificate failed (that will not change).
+          permanent = e.is_a?(OpenSSL::SSL::SSLError) && e.message.include?("certificate verify failed")
+          raise(permanent ? err : staged(err, :connect))
         end
         after_connect(http, op)
         http.deadline = E2E.now + @response_timeout if @response_timeout
@@ -356,30 +388,36 @@ module GaiaDesk
       end
     end
 
-    # Whether a failed request may be sent again: never once its answer was handed on;
-    # always when nothing was connected; a "try again" answer (429 +rate_limited+ /
-    # +desk_busy+, 409 +idempotency_key_in_flight+) always; a lost connection or a 502 /
-    # 504 (and a 503 with +Retry-After+) only for a GET.
+    # Whether a failed request may be sent again (the README's rule): any method when the
+    # connection was never made, or on a 429 or a 409 +idempotency_key_in_flight+ (refused
+    # before acting); a GET only when the connection was lost after sending, or on a 502,
+    # 503 (not a permanent one) or 504. Never a timeout (never staged), never once its
+    # answer was handed on, never past a +Retry-After+ longer than +max_retry_wait+.
     def retry?(err, attempt, idempotent)
       stage = stage_of(err)
       return false if stage.nil? || attempt >= @retries
-      return false if err.retry_after && err.retry_after > @max_retry_wait
+      return false if honours_retry_after?(err) && err.retry_after > @max_retry_wait
 
       case stage
       when :connect then true
       when :sent then idempotent
       else
-        return true if TRY_AGAIN.include?(err.reason) || (err.status == 429 && err.retry_after)
-        return idempotent if [502, 504].include?(err.status)
+        return true if err.status == 429 || (err.status == 409 && err.reason == "idempotency_key_in_flight")
+        return false if err.status == 503 && PERMANENT_503.include?(err.reason)
 
-        err.status == 503 && !err.retry_after.nil? && idempotent
+        [502, 503, 504].include?(err.status) && idempotent
       end
     end
 
-    def retry_delay(err, attempt)
-      return err.retry_after if err.retry_after
+    # 429 and 503 wait for their Retry-After; anything else backs off.
+    def honours_retry_after?(err)
+      [429, 503].include?(err.status) && !err.retry_after.nil?
+    end
 
-      [@retry_base * (2**attempt), 8.0].min * (0.5 + (rand * 0.5))
+    def retry_delay(err, attempt)
+      return err.retry_after if honours_retry_after?(err)
+
+      Transport.backoff(attempt, base: @retry_base, cap: @retry_max_delay)
     end
 
     # ───────────────────────────── end to end ─────────────────────────────

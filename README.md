@@ -463,19 +463,32 @@ end
 ## Retries, timeouts and idempotency
 
 ```ruby
-GaiaDesk.new(api_key: key, retries: 2, max_retry_wait: 60,
+GaiaDesk.new(api_key: key, retries: 2, retry_base: 0.25, retry_max_delay: 8, max_retry_wait: 60,
              response_timeout: 16 * 60, idle_timeout: 90, open_timeout: 30)
 ```
 
-- `retries` (default 2): a request is sent again, with exponential backoff and
-  jitter (or after `Retry-After`), only where that cannot run anything twice:
-  when nothing could be connected; on a "try again" answer (429 `rate_limited`
-  / `desk_busy`, 409 `idempotency_key_in_flight`); and, for GETs only, on a
-  502 / 504 or a connection lost before the answer. A POST, PUT or DELETE that
-  reached the server is never resent, and nothing is resent once its answer
-  started streaming. A `Retry-After` above `max_retry_wait` is raised at once.
-  A sealed retry is sealed afresh (the desk refuses a replayed seal).
-- `open_timeout`: seconds to connect.
+**Retries.** A request is sent again only when that cannot run anything twice:
+
+- **The connection was never made** (DNS, refused, TLS handshake): any method — nothing was sent.
+- **The connection was lost after sending, or the answer was 502, 503 or 504**: GETs only (reads).
+  A 503 that says the API or desk operations are switched off is not retried.
+- **429** (`rate_limited`, `desk_busy`) and **409** `idempotency_key_in_flight`: any method — the server refused
+  it before acting.
+
+Timeouts are never retried, and nothing is retried once its answer has begun. A call that changes something
+(POST, PUT, DELETE) is never sent again after it may have reached the server; an `Idempotency-Key` is sent but
+does not make a call retryable. 429 and 503 wait for `Retry-After`; one longer than `max_retry_wait:`
+(default 60 s) is not waited for — the error carries it. Otherwise the wait is exponential backoff with jitter:
+`retry_base:` (default 250 ms) doubling up to `retry_max_delay:` (default 8 s), times a random 0.5–1.0.
+`retries:` (default 2, so 3 attempts in all) sets how many times; 0 turns retries off. Each retry of
+a sealed operation is sealed afresh.
+
+Net::HTTP itself re-sends nothing: by itself it would send a GET, HEAD, PUT or DELETE again once after most
+network errors (`max_retries`, default 1, even on a fresh connection and with a body it cannot read again), and
+the SDK sets `max_retries = 0`. The SDK also opens one connection per request, so no request rides a kept-alive
+connection the server has since dropped.
+
+`open_timeout:` (default 30): seconds to connect; exceeded, an `UnreachableError`, kind `timeout` (not retried).
 
 **Timeouts** (seconds, on every transport: `:api`, `:local`, `:lan`) make a
 server or proxy that stops answering an error, never a hang:
@@ -493,13 +506,11 @@ server or proxy that stops answering an error, never a hang:
 - `nil` is no limit; zero, negative or non-numeric values are a `UsageError`.
   0.1.0's `timeout:` still works and sets both.
 - A connection closed or reset before any answer is an `UnreachableError` (kind
-  `network`) at once. Net::HTTP by itself sends a GET, HEAD, **PUT** or
-  **DELETE** again once after most network errors (`max_retries`, default 1),
-  even when its body cannot be read again; the SDK turns that off
-  (`max_retries = 0`), so `exec`, uploads, jobs, tokens and wakes go at most
-  once and only the retries above apply.
-- `idempotency_key:` on POSTs: a retry of yours with the same key and the same
-  request within 24 hours gets the first answer (`Idempotent-Replayed: true`).
+  `network`) at once, retried only as above.
+
+
+`idempotency_key:` on POSTs: a retry of yours with the same key and the same
+request within 24 hours gets the first answer (`Idempotent-Replayed: true`).
 
 ## API reference
 
