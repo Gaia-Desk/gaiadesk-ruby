@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "securerandom"
 require "uri"
 
 module GaiaDesk
@@ -150,10 +152,17 @@ module GaiaDesk
              else
                local.to_s
              end
+      # Into a file beside it, renamed over it once whole: a download that fails leaves no
+      # partial file (and an earlier file at +dest+ as it was).
+      part = File.join(File.dirname(dest), ".#{File.basename(dest)}.#{SecureRandom.hex(6)}.part")
       begin
-        File.open(dest, "wb") { |f| return download(desk_id, remote, f, call: call).merge("destination" => dest) }
+        r = File.open(part, "wb") { |f| download(desk_id, remote, f, call: call) }
+        File.rename(part, dest)
+        r.merge("destination" => dest)
       rescue SystemCallError => e
         raise Error.new("cannot write #{dest}: #{e.message}", kind: "local", argv: ["download"])
+      ensure
+        FileUtils.rm_f(part)
       end
     end
 

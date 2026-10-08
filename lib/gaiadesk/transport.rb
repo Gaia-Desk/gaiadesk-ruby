@@ -27,6 +27,12 @@ module GaiaDesk
     API_WAIT_MAX = 870
     JSON_TYPE = "application/json"
     OCTET_TYPE = "application/octet-stream"
+    # The longest wait for an answer to begin, in seconds: above the API's 15-minute limit
+    # on a call (a buffered exec answers when its command ends).
+    DEFAULT_RESPONSE_TIMEOUT = 16 * 60
+    # The longest silence while reading an answer's body, in seconds: the API's streams
+    # and held waits send a keep-alive every 15 s.
+    DEFAULT_IDLE_TIMEOUT = 90
     # Reasons of a 4xx answer that asks to try again shortly.
     TRY_AGAIN = %w[rate_limited desk_busy idempotency_key_in_flight].freeze
 
@@ -39,8 +45,7 @@ module GaiaDesk
     # @return [E2E::Policy, nil] the end-to-end policy (+api+ only)
     attr_reader :e2e
 
-    def initialize(api_key:, desk_token: nil, base_url: nil, wake: nil, timeout: nil, open_timeout: 30, e2e: :auto,
-                   e2e_keys: nil, retries: 2, retry_base: 0.5, max_retry_wait: 60, on_warning: nil)
+    def initialize(api_key:, desk_token: nil, base_url: nil, wake: nil, e2e: :auto, e2e_keys: nil, on_warning: nil, **http)
       raise UsageError.new("api_key must be a non-empty String", kind: "usage") unless api_key.is_a?(String) && !api_key.strip.empty?
 
       @name = "api"
@@ -48,7 +53,7 @@ module GaiaDesk
       @desk_token = Transport.check_desk_token(desk_token)
       @wake_secs = Transport.check_wake(wake)
       set_base(base_url || DEFAULT_API_URL, %w[http https], "base_url must be an http(s) URL: #{base_url.inspect}")
-      set_http_options(timeout, open_timeout, retries, retry_base, max_retry_wait)
+      set_http_options(**http)
       mode, pinned = E2E.check_options(e2e, e2e_keys)
       @e2e = E2E::Policy.new(self, mode, pinned, warn: on_warning)
     end
@@ -61,6 +66,19 @@ module GaiaDesk
       end
 
       desk_token.strip
+    end
+
+    # A timeout option checked: seconds (a positive Numeric), or +nil+ for no limit.
+    def self.check_timeout(value, name)
+      return nil if value.nil?
+      return value if value.is_a?(Numeric) && value.positive? && value.finite?
+
+      raise UsageError.new("#{name} is seconds (a positive Numeric), or nil for no limit: #{value.inspect}", kind: "usage")
+    end
+
+    # Seconds as a message says them: +1+, +0.5+.
+    def self.secs(value)
+      (value % 1).zero? ? value.to_i.to_s : value.to_f.round(3).to_s
     end
 
     # +wake+ checked: whole seconds, 0 to 120.
@@ -84,7 +102,7 @@ module GaiaDesk
 
     # A fresh Net::HTTP (not started) for one request.
     def connection
-      http = Net::HTTP.new(@host, @port)
+      http = HTTP::Connection.new(@host, @port)
       http.use_ssl = @https
       http.verify_mode = OpenSSL::SSL::VERIFY_PEER if @https
       apply_timeouts(http)
@@ -95,6 +113,16 @@ module GaiaDesk
       UnreachableError.new("the GaiaDesk API could not be reached (#{@base_url}): #{error.message} (#{error.class})",
                            kind: "network", reason: "network", exit_code: 255, argv: [op])
     end
+
+    # What the errors call the other end.
+    def where
+      "the GaiaDesk API (#{@base_url})"
+    end
+
+    # @return [Numeric, nil] seconds the answer has to begin (+nil+: no limit)
+    attr_reader :response_timeout
+    # @return [Numeric, nil] seconds a read of an answer's body may wait (+nil+: no limit)
+    attr_reader :idle_timeout
 
     # Called once the connection is up, before a request byte is sent (+lan+ pins here).
     def after_connect(_http, _op); end
@@ -171,9 +199,20 @@ module GaiaDesk
       @prefix = u.path.to_s.chomp("/")
     end
 
-    def set_http_options(timeout, open_timeout, retries, retry_base, max_retry_wait)
-      @timeout = timeout
-      @open_timeout = open_timeout
+    # +timeout+ (0.1.0's one per-read limit) still sets both timeouts.
+    def set_http_options(timeout: nil, response_timeout: DEFAULT_RESPONSE_TIMEOUT, idle_timeout: DEFAULT_IDLE_TIMEOUT,
+                         open_timeout: 30, retries: 2, retry_base: 0.5, max_retry_wait: 60)
+      unless timeout.nil?
+        if response_timeout != DEFAULT_RESPONSE_TIMEOUT || idle_timeout != DEFAULT_IDLE_TIMEOUT
+          raise UsageError.new("timeout is the old name of response_timeout and idle_timeout together: give it or them, not both",
+                               kind: "usage")
+        end
+
+        response_timeout = idle_timeout = timeout
+      end
+      @response_timeout = Transport.check_timeout(response_timeout, "response_timeout")
+      @idle_timeout = Transport.check_timeout(idle_timeout, "idle_timeout")
+      @open_timeout = Transport.check_timeout(open_timeout, "open_timeout")
       raise UsageError.new("retries is an Integer >= 0", kind: "usage") unless retries.is_a?(Integer) && retries >= 0
 
       @retries = retries
@@ -183,8 +222,11 @@ module GaiaDesk
 
     def apply_timeouts(http)
       http.open_timeout = @open_timeout
-      http.read_timeout = @timeout
-      http.write_timeout = @timeout if http.respond_to?(:write_timeout=)
+      # Until the answer begins every read and write is also held to the response deadline
+      # (HTTP::Deadline); its body is then read under idle_timeout (#perform).
+      http.read_timeout = @response_timeout
+      http.write_timeout = @response_timeout if http.respond_to?(:write_timeout=)
+      http.max_retries = 0 if http.respond_to?(:max_retries=)
       # A body shorter than its Content-Length is a broken transfer, never a clean short file.
       http.ignore_eof = false if http.respond_to?(:ignore_eof=)
       http
@@ -207,6 +249,7 @@ module GaiaDesk
 
     def perform(req, op, seal)
       http = connection
+      begun = false
       answered = false
       result = nil
       begin
@@ -216,7 +259,12 @@ module GaiaDesk
           raise staged(network_error(e, op), :connect)
         end
         after_connect(http, op)
+        http.deadline = E2E.now + @response_timeout if @response_timeout
         http.request(req) do |res|
+          # The answer began: its body (an error's too) is read under idle_timeout.
+          begun = true
+          http.deadline = nil
+          http.read_timeout = @idle_timeout
           status = res.code.to_i
           raise staged(failure(res, status, op, seal), :status) if status >= 400
 
@@ -227,6 +275,8 @@ module GaiaDesk
       rescue Error
         raise
       rescue *HTTP::NETWORK_ERRORS => e
+        raise timed_out(op, begun) if e.is_a?(Timeout::Error)
+
         err = network_error(e, op)
         raise answered ? err : staged(err, :sent)
       ensure
@@ -236,6 +286,19 @@ module GaiaDesk
           nil
         end
       end
+    end
+
+    # A timeout is never retried: before the answer began, the request may be running
+    # (an UnreachableError); after, the answer had begun (a ConnectionLostError).
+    def timed_out(op, begun)
+      if begun
+        return ConnectionLostError.new("#{where} stopped sending its answer to #{op}: nothing for " \
+                                       "#{Transport.secs(@idle_timeout)} s (idle_timeout)",
+                                       kind: "timeout", reason: "timeout", exit_code: 255, argv: [op])
+      end
+
+      UnreachableError.new("#{where} did not answer #{op} within #{Transport.secs(@response_timeout)} s (response_timeout)",
+                           kind: "timeout", reason: "timeout", exit_code: 255, argv: [op])
     end
 
     def failure(res, status, op, seal)

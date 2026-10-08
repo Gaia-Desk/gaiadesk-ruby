@@ -4,6 +4,39 @@ All notable changes to the `gaiadesk` gem. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-10-08
+
+Never hang on a dropped or stalled connection.
+
+### Added
+
+- `response_timeout:` (default 16 minutes, above the API's 15-minute call limit)
+  bounds the wait for an answer to begin, sending the request included; exceeded,
+  an `UnreachableError`, kind `timeout`, never retried. `idle_timeout:` (default
+  90 s; streams and held waits keep alive every 15 s) bounds every read of a body:
+  JSON, error bodies, downloads (plain and sealed) and event streams; exceeded, a
+  `ConnectionLostError`, kind `timeout` (a stream ends with exit 255, error kind
+  `connection_lost`, reason `timeout`). Both on every transport (`:api`, `:local`,
+  `:lan`, the Windows named pipe included); `nil` is no limit.
+
+### Fixed
+
+- A server or proxy that stopped answering (a half-open socket, a stall mid-body,
+  mid-JSON or mid-stream, or no answer at all) hung the call forever: reads had no
+  limit by default.
+- Net::HTTP silently sent a GET, PUT or DELETE a second time after a network error
+  (its own `max_retries`, default 1): an upload could reach the desk twice, a
+  streamed upload's second try sent no body and hung, and a timeout took twice as
+  long. It is now off; only the SDK's documented retries apply.
+- A stream ended by a transport error reports one of the six error kinds
+  (`connection_lost`, `unreachable`, ...).
+- `download` to a path writes a temporary file beside it and renames it once
+  whole: a failed download leaves no partial file.
+
+### Deprecated
+
+- `timeout:` (0.1.0's per-read limit) sets both `response_timeout:` and `idle_timeout:`.
+
 ## [0.1.0] - 2026-10-08
 
 First release: the GaiaDesk Platform API (`/v1`) from Ruby.

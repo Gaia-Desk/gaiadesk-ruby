@@ -33,7 +33,7 @@ class DeskOpsTest < Minitest::Test
 
     assert_equal "Bearer sess_person", req.header("authorization")
     assert_equal "gdagt_basic", req.header("x-gaiadesk-desk-token")
-    assert_match %r{\Agaiadesk-ruby/}, req.header("user-agent")
+    assert_equal "gaiadesk-ruby/0.1.1", req.header("user-agent")
   end
 
   # ───────────────────────────── exec ─────────────────────────────

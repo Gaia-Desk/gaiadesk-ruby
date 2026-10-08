@@ -175,9 +175,10 @@ class AccountTest < Minitest::Test
       sleep 2
       s.close
     end
-    gd = GaiaDesk::Client.new(api_key: "k", base_url: "http://127.0.0.1:#{server.addr[1]}/v1", timeout: 0.2, retries: 0)
+    gd = GaiaDesk::Client.new(api_key: "k", base_url: "http://127.0.0.1:#{server.addr[1]}/v1", response_timeout: 0.2, retries: 0)
     e = assert_raises(GaiaDesk::UnreachableError) { gd.devices }
-    assert_match(/Timeout/, e.message)
+    assert_equal "timeout", e.kind
+    assert_match(/within 0.2 s \(response_timeout\)/, e.message)
   ensure
     t&.kill
     server&.close

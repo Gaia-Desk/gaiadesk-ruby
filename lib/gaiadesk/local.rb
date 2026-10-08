@@ -90,8 +90,7 @@ module GaiaDesk
     PIPE_BUSY_WAIT = 5.0
 
     # rubocop:disable-next Lint/MissingSuper
-    def initialize(desk_token: nil, token: nil, socket_path: nil, timeout: nil, open_timeout: 30, retries: 2, retry_base: 0.5,
-                   max_retry_wait: 60, env: ENV)
+    def initialize(desk_token: nil, token: nil, socket_path: nil, env: ENV, **http)
       @name = "local"
       @desk_token = Transport.check_desk_token(desk_token)
       if !token.nil? && !(token.is_a?(String) && !token.strip.empty?)
@@ -109,7 +108,7 @@ module GaiaDesk
       @prefix = "/v1"
       @wake_secs = nil
       @e2e = nil
-      set_http_options(timeout, open_timeout, retries, retry_base, max_retry_wait)
+      set_http_options(**http)
     end
 
     # The desk's local admin token: +token:+, else the +api-token+ file (read on every
@@ -153,6 +152,10 @@ module GaiaDesk
       apply_timeouts(HTTP::SocketHTTP.over(connector))
     end
 
+    def where
+      "GaiaDesk's local API (#{@address})"
+    end
+
     def network_error(error, op)
       if error.is_a?(Errno::ENOENT) || error.is_a?(Errno::ECONNREFUSED)
         return UnreachableError.new("#{Local::UNAVAILABLE} (nothing listening at #{@address})",
@@ -186,7 +189,7 @@ module GaiaDesk
     attr_reader :fingerprint
 
     # rubocop:disable-next Lint/MissingSuper
-    def initialize(base_url:, fingerprint:, desk_token:, timeout: nil, open_timeout: 30, retries: 2, retry_base: 0.5, max_retry_wait: 60)
+    def initialize(base_url:, fingerprint:, desk_token:, **http)
       @name = "lan"
       if base_url.nil? || base_url.to_s.empty?
         raise UsageError.new("the lan transport needs base_url (https://<desk>:7443/v1, from the desk's Settings)", kind: "usage")
@@ -207,7 +210,7 @@ module GaiaDesk
 
       @wake_secs = nil
       @e2e = nil
-      set_http_options(timeout, open_timeout, retries, retry_base, max_retry_wait)
+      set_http_options(**http)
     end
 
     # The agent token as <tt>X-GaiaDesk-Desk-Token</tt>; no Authorization.
@@ -217,7 +220,7 @@ module GaiaDesk
 
     # TLS with no chain or hostname check: the pin, checked in {#after_connect}, is the identity.
     def connection
-      http = Net::HTTP.new(@host, @port)
+      http = HTTP::Connection.new(@host, @port)
       http.use_ssl = true
       http.verify_mode = OpenSSL::SSL::VERIFY_NONE
       http.verify_hostname = false if http.respond_to?(:verify_hostname=)
@@ -236,6 +239,10 @@ module GaiaDesk
         "#{got}, not the pinned #{@fingerprint} (check the fingerprint in the desk's Settings → GaiaDesk API)",
         kind: "unreachable", reason: "fingerprint_mismatch", exit_code: 255, argv: [op]
       )
+    end
+
+    def where
+      "the desk's LAN gateway (#{@base_url})"
     end
 
     def network_error(error, op)

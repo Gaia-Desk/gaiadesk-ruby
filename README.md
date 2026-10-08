@@ -463,7 +463,8 @@ end
 ## Retries, timeouts and idempotency
 
 ```ruby
-GaiaDesk.new(api_key: key, retries: 2, max_retry_wait: 60, timeout: nil, open_timeout: 30)
+GaiaDesk.new(api_key: key, retries: 2, max_retry_wait: 60,
+             response_timeout: 16 * 60, idle_timeout: 90, open_timeout: 30)
 ```
 
 - `retries` (default 2): a request is sent again, with exponential backoff and
@@ -474,9 +475,29 @@ GaiaDesk.new(api_key: key, retries: 2, max_retry_wait: 60, timeout: nil, open_ti
   reached the server is never resent, and nothing is resent once its answer
   started streaming. A `Retry-After` above `max_retry_wait` is raised at once.
   A sealed retry is sealed afresh (the desk refuses a replayed seal).
-- `timeout`: seconds a read may wait (default `nil`: as long as the server holds
-  the answer; it caps every call at 15 minutes, and streams and held waits send
-  keep-alives every 15 seconds). `open_timeout`: seconds to connect.
+- `open_timeout`: seconds to connect.
+
+**Timeouts** (seconds, on every transport: `:api`, `:local`, `:lan`) make a
+server or proxy that stops answering an error, never a hang:
+
+- `response_timeout` (default 16 minutes, above the API's 15-minute limit on a
+  call: a buffered `exec` answers when its command ends): the longest wait for
+  an answer to begin, sending the request included. Exceeded: an
+  `UnreachableError`, kind `timeout`. Never retried (the request may be running).
+- `idle_timeout` (default 90; streams and held waits send a keep-alive every 15
+  seconds): the longest silence while reading a body (JSON, a download, an event
+  stream), per read, so a large download that keeps flowing never times out.
+  Exceeded mid-answer: a `ConnectionLostError`, kind `timeout` (a stream ends
+  with exit code 255 and that error, kind `connection_lost`, reason `timeout`,
+  in its `result`). A download to a path that fails leaves no partial file.
+- `nil` is no limit; zero, negative or non-numeric values are a `UsageError`.
+  0.1.0's `timeout:` still works and sets both.
+- A connection closed or reset before any answer is an `UnreachableError` (kind
+  `network`) at once. Net::HTTP by itself sends a GET, HEAD, **PUT** or
+  **DELETE** again once after most network errors (`max_retries`, default 1),
+  even when its body cannot be read again; the SDK turns that off
+  (`max_retries = 0`), so `exec`, uploads, jobs, tokens and wakes go at most
+  once and only the retries above apply.
 - `idempotency_key:` on POSTs: a retry of yours with the same key and the same
   request within 24 hours gets the first answer (`Idempotent-Replayed: true`).
 

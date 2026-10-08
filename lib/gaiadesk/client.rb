@@ -55,19 +55,27 @@ module GaiaDesk
     # @option options [String] :socket_path +:local+: another socket path or pipe name
     # @option options [Hash] :env +:local+: the environment to find the socket in (default +ENV+)
     # @option options [String] :fingerprint +:lan+: the gateway certificate's SHA-256 (as the desk's Settings shows it)
-    # @param timeout [Numeric, nil] seconds a read may wait (default +nil+: as long as the server holds the answer)
-    # @param open_timeout [Numeric] seconds to connect
+    # @param response_timeout [Numeric, nil] seconds an answer has to begin (its status and headers), sending the
+    #   request included (default 16 minutes, above the API's 15-minute limit on a call; +nil+: no limit). Exceeded:
+    #   an {UnreachableError}, kind +timeout+
+    # @param idle_timeout [Numeric, nil] seconds a read of an answer's body (JSON, a download, an event stream) may
+    #   wait (default 90; streams and held waits send a keep-alive every 15 s; +nil+: no limit). Exceeded: a
+    #   {ConnectionLostError}, kind +timeout+
+    # @param timeout [Numeric, nil] deprecated (0.1.0): sets +response_timeout+ and +idle_timeout+ both
+    # @param open_timeout [Numeric, nil] seconds to connect
     # @param retries [Integer] how many times a request is sent again when that is safe (see the README)
     # @param max_retry_wait [Numeric] the longest +Retry-After+ honoured, in seconds
     # @raise [UsageError] for a missing or misplaced option
-    def initialize(transport: :api, timeout: nil, open_timeout: 30, retries: 2, retry_base: 0.5, max_retry_wait: 60, **options)
+    def initialize(transport: :api, response_timeout: Transport::DEFAULT_RESPONSE_TIMEOUT, idle_timeout: Transport::DEFAULT_IDLE_TIMEOUT,
+                   timeout: nil, open_timeout: 30, retries: 2, retry_base: 0.5, max_retry_wait: 60, **options)
       name = transport.to_s
       raise UsageError.new("transport is :api, :local or :lan (not #{transport.inspect})", kind: "usage") unless OPTIONS.key?(name)
 
       misplaced = options.keys - OPTIONS[name]
       raise UsageError.new("#{misplaced.join(', ')}: not an option of the #{name} transport", kind: "usage") unless misplaced.empty?
 
-      http = { timeout: timeout, open_timeout: open_timeout, retries: retries, retry_base: retry_base, max_retry_wait: max_retry_wait }
+      http = { response_timeout: response_timeout, idle_timeout: idle_timeout, timeout: timeout, open_timeout: open_timeout,
+               retries: retries, retry_base: retry_base, max_retry_wait: max_retry_wait }
       @transport = build(name, options, http)
     end
 

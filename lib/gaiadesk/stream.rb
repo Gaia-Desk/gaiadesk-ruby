@@ -341,7 +341,8 @@ module GaiaDesk
         out["desk"] = env.desk if env.desk
         return out
       end
-      kind = { "network" => "unreachable", "e2e" => "protocol" }.fetch(err.kind, err.kind)
+      kind = Errors::CLASSES.find { |_, cls| err.is_a?(cls) }&.first ||
+             { "network" => "unreachable", "e2e" => "protocol" }.fetch(err.kind, err.kind)
       out = { "kind" => kind, "message" => err.message }
       out["reason"] = err.reason if err.reason
       out
