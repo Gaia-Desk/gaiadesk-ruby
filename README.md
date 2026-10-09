@@ -1,10 +1,16 @@
 # GaiaDesk SDK for Ruby
 
-Drive your GaiaDesk machines ("desks") from Ruby through the GaiaDesk API:
-list them and check that they are reachable, wake them, run commands and get
-exit codes back, stream output, copy files, run and follow background jobs,
-read stats, mint and revoke scoped agent tokens, read the audit trail, and
-manage webhooks and support sessions.
+[![CI](https://github.com/Gaia-Desk/gaiadesk-ruby/actions/workflows/ci.yml/badge.svg)](https://github.com/Gaia-Desk/gaiadesk-ruby/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/Gaia-Desk/gaiadesk-ruby)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/Gaia-Desk/gaiadesk-ruby)](https://github.com/Gaia-Desk/gaiadesk-ruby/releases/latest)
+
+The official Ruby SDK and client library for the [GaiaDesk](https://gaiadesk.net)
+remote desktop Platform API, for remote access automation from Ruby apps,
+scripts, CI and AI agents. Drive your GaiaDesk machines ("desks"): list them
+and check that they are reachable, wake them, run commands on remote
+computers and get exit codes back, stream output, transfer files, run and
+follow background jobs, read stats, mint and revoke scoped agent tokens, read
+the audit trail, and manage webhooks and support sessions.
 
 - Gem: `gaiadesk` (Ruby 3.1+), module `GaiaDesk`
 - Runtime dependencies: **none**. HTTP is `Net::HTTP`; the
@@ -18,9 +24,9 @@ describes (`api/openapi.yaml`, which references the CLI's JSON schema), as
 Ruby Hashes with String keys: `r["exit"]`, `r["stdout"]`, `job["state"]`.
 Failures are one family of typed errors with the API's `kind` and `reason`.
 
-Other GaiaDesk developer tools: the
+Other GaiaDesk developer tools (all of them under [Links](#links)): the
 [TypeScript SDK](https://github.com/Gaia-Desk/gaiadesk-typescript) (`@gaiadesk/sdk`),
-the [Python SDK](https://github.com/Gaia-Desk/gaiadesk-python) (`gaiadesk`), and the
+the [Python SDK](https://github.com/Gaia-Desk/gaiadesk-python), and the
 [MCP server](https://github.com/Gaia-Desk/gaiadesk-mcp) for AI assistants.
 
 MIT-licensed. GaiaDesk itself is proprietary and not covered by this license.
@@ -49,10 +55,29 @@ MIT-licensed. GaiaDesk itself is proprietary and not covered by this license.
 - [Examples](#examples)
 - [Not covered](#not-covered)
 - [Development](#development)
+- [Links](#links)
 
 ---
 
 ## Install
+
+The gem is not on RubyGems yet. Take it from GitHub at a release tag, in a
+Gemfile:
+
+```ruby
+gem "gaiadesk", git: "https://github.com/Gaia-Desk/gaiadesk-ruby", tag: "v0.1.2"
+```
+
+or build and install it yourself:
+
+```sh
+git clone --branch v0.1.2 https://github.com/Gaia-Desk/gaiadesk-ruby
+cd gaiadesk-ruby
+gem build gaiadesk.gemspec
+gem install ./gaiadesk-0.1.2.gem
+```
+
+Once published to RubyGems:
 
 ```sh
 gem install gaiadesk
@@ -539,3 +564,21 @@ SSE streams written in pieces with keep-alive comments, held waits, broken
 transfers, rate limits, and a desk that opens sealed operations with its own
 key and seals its answers; the local transport over a real Unix socket and
 the LAN transport over TLS with a generated certificate.
+
+## Links
+
+- Package: `gaiadesk` on RubyGems once published; until then, install it from
+  this repository's [release tags](https://github.com/Gaia-Desk/gaiadesk-ruby/tags)
+- Documentation: [Getting started](https://gaiadesk.net/docs/getting-started),
+  [The CLI for scripts and AI agents](https://gaiadesk.net/docs/cli-for-agents),
+  [Agent access](https://gaiadesk.net/docs/agent-access),
+  [Embedding GaiaDesk](https://gaiadesk.net/docs/embedding-gaiadesk) (support sessions),
+  [Security](https://gaiadesk.net/docs/security)
+- GaiaDesk SDKs: [TypeScript](https://github.com/Gaia-Desk/gaiadesk-typescript), [Python](https://github.com/Gaia-Desk/gaiadesk-python),
+  [Go](https://github.com/Gaia-Desk/gaiadesk-go), [Java and Kotlin](https://github.com/Gaia-Desk/gaiadesk-java),
+  [.NET](https://github.com/Gaia-Desk/gaiadesk-dotnet), Ruby (this one),
+  [PHP](https://github.com/Gaia-Desk/gaiadesk-php), [Rust](https://github.com/Gaia-Desk/gaiadesk-rust);
+  the [MCP server](https://github.com/Gaia-Desk/gaiadesk-mcp) for AI assistants; the
+  [command line](https://github.com/Gaia-Desk/gaiadesk-cli), `gaiadesk-cli`
+- [Changelog](CHANGELOG.md) and [releases](https://github.com/Gaia-Desk/gaiadesk-ruby/releases)
+- [Security policy](https://github.com/Gaia-Desk/gaiadesk-ruby/security/policy)
